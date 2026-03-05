@@ -57,7 +57,7 @@ func handleSend(req ipc.Request) ipc.Response {
 				messages[i].Source = req.Source
 				messages[i].Time = time.Now()
 				updateTitle()
-				sendSystemNotification(req.Message, req.Source, req.ID)
+				// Skip system notification on upsert — only notify once on first creation
 				return ipc.Response{OK: true}
 			}
 		}

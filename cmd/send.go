@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/nickhudkins/mac-notify/ipc"
@@ -20,6 +22,12 @@ var sendCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		msg := strings.Join(args, " ")
+
+		// Auto-detect tmux session:window if --source not explicitly set
+		if sendSource == "" {
+			sendSource = detectTmux()
+		}
+
 		resp, err := ipc.Send(ipc.Request{
 			Action:  "send",
 			Message: msg,
@@ -34,6 +42,17 @@ var sendCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func detectTmux() string {
+	if os.Getenv("TMUX") == "" {
+		return ""
+	}
+	out, err := exec.Command("tmux", "display-message", "-p", "#{session_name}:#{window_index}").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func init() {
