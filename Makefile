@@ -3,7 +3,10 @@ GOBIN   := $(shell go env GOPATH)/bin
 APP_DIR := $(HOME)/Applications/mac-notify.app
 APP_BIN := $(APP_DIR)/Contents/MacOS/$(BINARY)
 
-.PHONY: build install uninstall clean
+.PHONY: build install install-hooks uninstall clean
+
+install-hooks:
+	./hooks/install.sh
 
 build:
 	go build -o $(BINARY) .

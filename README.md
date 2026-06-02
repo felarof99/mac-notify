@@ -101,6 +101,69 @@ system_notifications: true
 |-----|---------|-------------|
 | `system_notifications` | `true` | Show native macOS notification banners |
 
+## Agent integration (Claude Code + Codex)
+
+The `hooks/` directory turns coding-agent events into rich notifications that
+answer two questions at a glance:
+
+- **WHERE** — a precise PARA-style tmux breadcrumb derived from the *exact* pane
+  the agent runs in (`$TMUX_PANE`), so it's right even after you switch windows.
+  Mirrors the `tl` / tmux-para-picker tree: `parent › sub-session · window`.
+- **WHAT** — a one-liner. For a finished turn it's the agent's final message
+  ("what's ready"); for a Claude prompt it's what Claude wants (input/permission).
+
+```
+🔔  Claude · SELF_IMPROVE › MAC_NOTIFY · w1
+    ✅ Done — wired the notify hook and the build passes.
+
+🔔  Codex · @browseros › agent · w3
+    🔐 Needs your permission to run a command
+```
+
+Status glyphs: `✅` turn complete · `⌛` waiting for input · `🔐` needs permission.
+
+### Files
+
+| File | Role |
+|------|------|
+| `hooks/agent-notify.py` | Core — parses the event, builds the breadcrumb + one-liner, calls `mac-notify send`. Shared by both agents. |
+| `hooks/claude-hook.sh` | Claude Code Stop/Notification hook. Reads the hook JSON on stdin. |
+| `hooks/codex-hook.sh` | Codex `notify` program. Also **chains** to the original Codex Computer Use client so that feature keeps working (Codex allows only one `notify`). |
+| `hooks/install.sh` | Symlinks the three scripts into `~/.claude/hooks` (idempotent). |
+
+### Setup
+
+```sh
+./hooks/install.sh        # or: make install-hooks
+```
+
+Then point your agents at the shims:
+
+**Claude Code** — `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }],
+    "Notification": [
+      { "matcher": "idle_prompt",       "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] },
+      { "matcher": "permission_prompt", "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }
+    ]
+  }
+}
+```
+
+**Codex** — `~/.codex/config.toml`:
+
+```toml
+notify = ["/Users/<you>/.claude/hooks/codex-hook.sh"]
+```
+
+Each pane gets one notification slot (keyed by `pane_id`) that updates in place,
+so repeated turns refresh rather than pile up. Out of tmux, it falls back to the
+project directory name (`📁 my-project`). Every script exits 0 on any error so a
+notifier bug can never block the agent.
+
 ## Architecture
 
 ```
