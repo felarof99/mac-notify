@@ -95,11 +95,32 @@ When enabled, each `send` also triggers a macOS notification banner with sound. 
 
 ```yaml
 system_notifications: true
+mute_patterns:
+  - "^Codex · .*chatcli"   # drop a chatty background Codex runner
 ```
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `system_notifications` | `true` | Show native macOS notification banners |
+| `mute_patterns` | `[]` | Regexes; a notification whose **source or body** matches any is silently dropped |
+
+### Muting noisy notifications
+
+Add Go-flavored (RE2) regular expressions to `mute_patterns` to silence senders
+you don't care about — e.g. a tool that fires Codex on a timer. Each pattern is
+tested against the **source** (the `[Codex · …]` label) and the **body**
+independently, so anchors apply per field:
+
+```yaml
+mute_patterns:
+  - "^Codex · .*chatcli"    # mute one source
+  - "screenshot|recording"  # mute by body keyword
+```
+
+- **Live reload** — edits apply on the next notification; no restart needed.
+- **Future-only** — muting doesn't touch messages already in the queue.
+- **Fail-safe** — an invalid regex is skipped, never silencing everything or
+  crashing the daemon.
 
 ## Agent integration (Claude Code + Codex)
 
