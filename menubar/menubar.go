@@ -10,6 +10,7 @@ package menubar
 import "C"
 import (
 	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -21,11 +22,33 @@ import (
 )
 
 var (
-	mu       sync.RWMutex
-	messages []ipc.Message
-	nextID   int
-	cfg      *config.Config
+	mu        sync.RWMutex
+	messages  []ipc.Message
+	nextID    int
+	cfg       *config.Config
+	muteSet   *config.MuteSet
+	muteMtime time.Time
 )
+
+// refreshMutes reloads mute patterns from the config file whenever it changes,
+// so edits to config.yaml take effect live without restarting the daemon.
+// Must be called under mu (handleSend holds it).
+func refreshMutes() {
+	info, err := os.Stat(config.Path())
+	if err != nil {
+		return // no readable config; keep whatever patterns we have
+	}
+	if muteSet != nil && info.ModTime().Equal(muteMtime) {
+		return // unchanged since last load
+	}
+	c, err := config.Load()
+	if err != nil {
+		return
+	}
+	set, _ := config.CompileMutes(c.MutePatterns)
+	muteSet = set
+	muteMtime = info.ModTime()
+}
 
 func HandleRequest(req ipc.Request) ipc.Response {
 	switch req.Action {
@@ -49,6 +72,12 @@ func handleSend(req ipc.Request) ipc.Response {
 
 	mu.Lock()
 	defer mu.Unlock()
+
+	// Drop muted notifications (regex on source or body) before they queue.
+	refreshMutes()
+	if muteSet.MatchesAny(req.Source, req.Message) {
+		return ipc.Response{OK: true}
+	}
 
 	if req.ID != "" {
 		for i, m := range messages {

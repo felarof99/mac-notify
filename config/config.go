@@ -10,11 +10,15 @@ import (
 
 type Config struct {
 	SystemNotifications bool `yaml:"system_notifications"`
+	// MutePatterns are regular expressions; a notification whose source or body
+	// matches any of them is silently dropped. Edited live in config.yaml.
+	MutePatterns []string `yaml:"mute_patterns"`
 }
 
 func Default() *Config {
 	return &Config{
 		SystemNotifications: true,
+		MutePatterns:        []string{},
 	}
 }
 
