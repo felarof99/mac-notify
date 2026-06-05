@@ -141,14 +141,14 @@ answer two questions at a glance:
     🔐 Needs your permission to run a command
 ```
 
-Status glyphs: `✅` turn complete · `⌛` waiting for input · `🔐` needs permission.
+Status glyphs: `✅` turn complete · `❓` asking a question · `⌛` waiting for input · `🔐` needs permission.
 
 ### Files
 
 | File | Role |
 |------|------|
 | `hooks/agent-notify.py` | Core — parses the event, builds the breadcrumb + one-liner, calls `mac-notify send`. Shared by both agents. |
-| `hooks/claude-hook.sh` | Claude Code Stop/Notification hook. Reads the hook JSON on stdin. |
+| `hooks/claude-hook.sh` | Claude Code Stop / Notification / PreToolUse hook. Reads the hook JSON on stdin. |
 | `hooks/codex-hook.sh` | Codex `notify` program. Also **chains** to the original Codex Computer Use client so that feature keeps working (Codex allows only one `notify`). |
 | `hooks/install.sh` | Symlinks the three scripts into `~/.claude/hooks` (idempotent). |
 
@@ -165,14 +165,20 @@ Then point your agents at the shims:
 ```json
 {
   "hooks": {
-    "Stop": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }],
-    "Notification": [
-      { "matcher": "idle_prompt",       "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] },
-      { "matcher": "permission_prompt", "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }
-    ]
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }],
+    "Notification": [{ "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }],
+    "PreToolUse":   [{ "matcher": "AskUserQuestion|ExitPlanMode", "hooks": [{ "type": "command", "command": "~/.claude/hooks/claude-hook.sh", "timeout": 10 }] }]
   }
 }
 ```
+
+The catch-all `""` Notification matcher means *every* notification type reaches
+the hook — including `elicitation_dialog`, which earlier configs that only listed
+`idle_prompt`/`permission_prompt` silently missed. The `PreToolUse` hook fires the
+instant Claude opens an `AskUserQuestion` / `ExitPlanMode` prompt (carrying the
+question text), rather than waiting for the 60-second `idle_prompt`. Noisy
+post-interaction types (`elicitation_complete`/`_response`, `auth_success`) are
+dropped inside `agent-notify.py`.
 
 **Codex** — `~/.codex/config.toml`:
 

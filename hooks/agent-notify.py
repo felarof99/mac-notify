@@ -251,17 +251,50 @@ def send(message, source, notif_id):
 
 # ----- event handling ------------------------------------------------------
 
-GLYPH = {"done": "✅", "waiting": "⌛", "permission": "🔐", "info": "🔔"}
+GLYPH = {"done": "✅", "waiting": "⌛", "permission": "🔐", "question": "❓", "info": "🔔"}
 TOOL_LABEL = {"claude": "Claude", "codex": "Codex"}
+
+# Notification types that fire *after* the user has already engaged (or are
+# purely informational) — not worth a ping.
+NOISY_NOTIFICATIONS = {"auth_success", "elicitation_complete", "elicitation_response"}
 
 
 def classify_notification(message, ntype):
+    nt = (ntype or "").lower()
+    if nt == "elicitation_dialog":
+        return "question"
+    if nt == "permission_prompt":
+        return "permission"
+    if nt == "idle_prompt":
+        return "waiting"
     blob = f"{ntype} {message}".lower()
     if "permission" in blob or "approve" in blob or "allow" in blob:
         return "permission"
     if "waiting" in blob or "idle" in blob or "input" in blob:
         return "waiting"
     return "info"
+
+
+def pretool_question(payload):
+    """Map an interactive tool call to (status, oneliner); (None, None) to skip.
+
+    Fires the instant Claude asks — independent of the 60s idle_prompt — and
+    carries the actual question text so the notification says what it wants.
+    """
+    tool = payload.get("tool_name", "")
+    ti = payload.get("tool_input") or {}
+    if tool == "AskUserQuestion":
+        questions = ti.get("questions") or []
+        first = ""
+        if questions and isinstance(questions[0], dict):
+            first = questions[0].get("question") or questions[0].get("header") or ""
+        oneliner = clean_oneliner(first) or "Claude is asking you a question"
+        if len(questions) > 1:
+            oneliner += f" (+{len(questions) - 1} more)"
+        return "question", oneliner
+    if tool == "ExitPlanMode":
+        return "question", "Plan ready for your review"
+    return None, None
 
 
 def handle_claude():
@@ -284,13 +317,21 @@ def handle_claude():
         oneliner = clean_oneliner(last_assistant_text(payload.get("transcript_path")))
         if not oneliner:
             oneliner = "Turn complete"
+    elif event == "PreToolUse":
+        # Interactive question/plan tools — notify the moment they're invoked.
+        status, oneliner = pretool_question(payload)
+        if status is None:
+            return
     elif event == "Notification":
-        msg = (payload.get("message") or "").strip()
         ntype = payload.get("notification_type", "")
+        if ntype in NOISY_NOTIFICATIONS:
+            return
+        msg = (payload.get("message") or "").strip()
         status = classify_notification(msg, ntype)
         oneliner = clean_oneliner(msg) if msg else {
             "permission": "Needs your permission",
             "waiting": "Waiting for your input",
+            "question": "Claude is asking you something",
             "info": "Needs your attention",
         }[status]
     else:
